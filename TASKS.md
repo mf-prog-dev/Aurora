@@ -8,7 +8,7 @@
 
 - [ ] Add richer night-detail timeline rows.
 - [ ] Consider a manual refresh/force-cache-clear control.
-- [ ] Improve seasonal messaging when Fairbanks has no astronomical darkness.
+- [ ] Add explicit UTC Kp source block visibility in the detail view.
 
 ## Done
 
@@ -21,6 +21,8 @@
 - [x] Document local setup and run commands.
 - [x] Add data source clients with timeouts and cache-friendly normalized records.
 - [x] Verify the local dashboard and source fetch behavior.
+- [x] Improve seasonal messaging when Fairbanks has no astronomical darkness.
+- [x] Add richer night-detail timeline rows.
 
 ## Principles
 

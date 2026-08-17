@@ -51,6 +51,17 @@ class KpRecord:
     source: str
 
 
+@dataclass(frozen=True)
+class HourlyDetail:
+    time_utc: datetime
+    time_local_label: str
+    is_dark: bool
+    kp: float | None
+    cloud_cover: float | None
+    precipitation_probability: float | None
+    temperature_f: float | None
+
+
 @dataclass
 class SourceStatus:
     name: str
@@ -74,6 +85,7 @@ class NightAssessment:
     avg_cloud_cover: float | None
     min_cloud_cover: float | None
     moon_illumination: float
+    seasonal_note: str | None = None
+    hourly_details: list[HourlyDetail] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
-

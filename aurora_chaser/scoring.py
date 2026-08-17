@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from .config import UTC
-from .models import AuroraNight, HourlyWeather, KpRecord, NightAssessment
+from .config import FAIRBANKS_TZ, UTC
+from .models import AuroraNight, HourlyDetail, HourlyWeather, KpRecord, NightAssessment
 from .time_windows import moon_illumination_percent
 
 
@@ -50,6 +50,8 @@ def assess_night(
     blockers = blockers_for(night, max_kp, avg_cloud, moon, days_out, failures)
     recommendation = recommendation_for(score, blockers)
     reasons = reasons_for(max_kp, avg_cloud, moon, night.dark_hours, confidence)
+    seasonal_note = seasonal_note_for(night)
+    hourly_details = build_hourly_details(night, weather, kp_records)
 
     return NightAssessment(
         night=night,
@@ -65,6 +67,8 @@ def assess_night(
         avg_cloud_cover=avg_cloud,
         min_cloud_cover=min_cloud,
         moon_illumination=moon,
+        seasonal_note=seasonal_note,
+        hourly_details=hourly_details,
         blockers=blockers,
         reasons=reasons,
     )
@@ -78,6 +82,50 @@ def filter_weather_for_darkness(night: AuroraNight, weather: list[HourlyWeather]
         for entry in weather
         if any(window.contains(entry.time_utc) for window in night.dark_windows_utc)
     ]
+
+
+def build_hourly_details(
+    night: AuroraNight,
+    weather: list[HourlyWeather],
+    kp_records: list[KpRecord],
+) -> list[HourlyDetail]:
+    rows: list[HourlyDetail] = []
+    weather_in_night = [
+        entry for entry in weather if night.start_utc <= entry.time_utc < night.end_utc
+    ]
+    for entry in weather_in_night:
+        local = entry.time_utc.astimezone(FAIRBANKS_TZ)
+        rows.append(
+            HourlyDetail(
+                time_utc=entry.time_utc,
+                time_local_label=local.strftime("%a %-I %p"),
+                is_dark=any(window.contains(entry.time_utc) for window in night.dark_windows_utc),
+                kp=kp_for_hour(entry.time_utc, kp_records),
+                cloud_cover=entry.cloud_cover,
+                precipitation_probability=entry.precipitation_probability,
+                temperature_f=entry.temperature_f,
+            )
+        )
+    return rows
+
+
+def kp_for_hour(moment_utc: datetime, kp_records: list[KpRecord]) -> float | None:
+    matching = [
+        record
+        for record in kp_records
+        if record.time_utc <= moment_utc < record.time_utc + timedelta(hours=3)
+    ]
+    if matching:
+        return matching[-1].kp
+
+    prior = [record for record in kp_records if record.time_utc <= moment_utc]
+    if not prior:
+        return None
+    latest = max(prior, key=lambda record: record.time_utc)
+    age_hours = (moment_utc - latest.time_utc).total_seconds() / 3600
+    if age_hours <= 3:
+        return latest.kp
+    return None
 
 
 def score_aurora(max_kp: float | None) -> int:
@@ -184,7 +232,18 @@ def blockers_for(
     return blockers
 
 
+def seasonal_note_for(night: AuroraNight) -> str | None:
+    if night.has_astronomical_darkness:
+        return None
+    return (
+        "Fairbanks has no astronomical darkness during this chasing window. "
+        "Treat aurora chasing as out of season until dark hours return."
+    )
+
+
 def recommendation_for(score: int, blockers: list[str]) -> str:
+    if any("No astronomical darkness" in blocker for blocker in blockers):
+        return "Skip"
     if score >= 80 and not blockers:
         return "Go"
     if score >= 55:
@@ -216,4 +275,3 @@ def reasons_for(
         f"Astronomical darkness: {dark_hours:.1f} hours",
         f"Forecast confidence: {confidence}",
     ]
-

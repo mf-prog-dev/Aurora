@@ -114,7 +114,7 @@ def render_dashboard(assessments: list[NightAssessment], statuses: list[SourceSt
     .Watch {{ background: var(--watch); }}
     .Skip {{ background: var(--skip); }}
     details {{
-      max-width: 360px;
+      max-width: 520px;
     }}
     summary {{
       cursor: pointer;
@@ -124,6 +124,29 @@ def render_dashboard(assessments: list[NightAssessment], statuses: list[SourceSt
       margin: 8px 0 0;
       padding-left: 18px;
       color: var(--muted);
+    }}
+    .note {{
+      margin: 10px 0;
+      padding: 10px;
+      background: #fff7d6;
+      border: 1px solid #e8d58a;
+      border-radius: 6px;
+      color: #51430f;
+    }}
+    .hourly {{
+      margin-top: 12px;
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fbfcfa;
+    }}
+    .hourly th, .hourly td {{
+      padding: 6px 7px;
+      font-size: 12px;
+      white-space: nowrap;
+    }}
+    .dark-cell {{
+      font-weight: 700;
+      color: var(--go);
     }}
     .sources {{
       margin-top: 20px;
@@ -182,6 +205,8 @@ def render_row(assessment: NightAssessment) -> str:
     reasons = "".join(f"<li>{escape(reason)}</li>" for reason in assessment.reasons)
     blockers = "".join(f"<li>{escape(blocker)}</li>" for blocker in assessment.blockers)
     blocker_section = f"<strong>Go blockers</strong><ul>{blockers}</ul>" if blockers else "<strong>No Go blockers</strong>"
+    seasonal_note = f'<div class="note">{escape(assessment.seasonal_note)}</div>' if assessment.seasonal_note else ""
+    hourly = render_hourly_details(assessment)
     return f"""
 <tr>
   <td><strong>{escape(night.label)}</strong><br>{night.start_local.strftime("%b %-d %H:%M")} to {night.end_local.strftime("%b %-d %H:%M")}</td>
@@ -195,11 +220,42 @@ def render_row(assessment: NightAssessment) -> str:
   <td>
     <details>
       <summary>Details</summary>
+      {seasonal_note}
       <ul>{reasons}</ul>
       {blocker_section}
+      {hourly}
     </details>
   </td>
 </tr>"""
+
+
+def render_hourly_details(assessment: NightAssessment) -> str:
+    if not assessment.hourly_details:
+        return '<p class="note">No hourly weather rows are available for this night.</p>'
+    rows = "\n".join(
+        f"""<tr>
+  <td>{escape(detail.time_local_label)}</td>
+  <td class="{'dark-cell' if detail.is_dark else ''}">{'dark' if detail.is_dark else 'dim'}</td>
+  <td>{format_number(detail.kp, 1)}</td>
+  <td>{format_percent(detail.cloud_cover)}</td>
+  <td>{format_percent(detail.precipitation_probability)}</td>
+  <td>{format_number(detail.temperature_f, 0)}&deg;F</td>
+</tr>"""
+        for detail in assessment.hourly_details
+    )
+    return f"""<table class="hourly" aria-label="Hourly detail for {escape(assessment.night.label)}">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Sky</th>
+      <th>Kp</th>
+      <th>Cloud</th>
+      <th>Precip</th>
+      <th>Temp</th>
+    </tr>
+  </thead>
+  <tbody>{rows}</tbody>
+</table>"""
 
 
 def render_status(status: SourceStatus) -> str:
@@ -213,6 +269,8 @@ def render_status(status: SourceStatus) -> str:
 
 
 def escape(value: str) -> str:
+    if value is None:
+        return ""
     return (
         value.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -220,3 +278,14 @@ def escape(value: str) -> str:
         .replace('"', "&quot;")
     )
 
+
+def format_percent(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.0f}%"
+
+
+def format_number(value: float | None, digits: int) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.{digits}f}"

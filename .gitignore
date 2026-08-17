@@ -1,0 +1,9 @@
+legacy/
+.env
+.venv/
+.DS_Store
+__pycache__/
+.pytest_cache/
+*.pyc
+data/*.sqlite3
+data/*.db

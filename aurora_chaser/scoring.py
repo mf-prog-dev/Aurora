@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from .config import UTC
+from .models import AuroraNight, HourlyWeather, KpRecord, NightAssessment
+from .time_windows import moon_illumination_percent
+
+
+def assess_night(
+    night: AuroraNight,
+    weather: list[HourlyWeather],
+    kp_records: list[KpRecord],
+    source_failures: list[str] | None = None,
+    now_utc: datetime | None = None,
+) -> NightAssessment:
+    now = now_utc or datetime.now(UTC)
+    failures = source_failures or []
+    weather_in_dark = filter_weather_for_darkness(night, weather)
+    kp_in_night = [record.kp for record in kp_records if night.start_utc <= record.time_utc < night.end_utc]
+    clouds = [entry.cloud_cover for entry in weather_in_dark if entry.cloud_cover is not None]
+    temps = [entry.temperature_f for entry in weather_in_dark if entry.temperature_f is not None]
+    precip = [
+        entry.precipitation_probability
+        for entry in weather_in_dark
+        if entry.precipitation_probability is not None
+    ]
+
+    max_kp = max(kp_in_night) if kp_in_night else None
+    avg_cloud = round(sum(clouds) / len(clouds), 1) if clouds else None
+    min_cloud = min(clouds) if clouds else None
+    moon = moon_illumination_percent(night.start_local.date())
+    days_out = max(0.0, (night.start_utc - now).total_seconds() / 86400)
+
+    aurora_score = score_aurora(max_kp)
+    sky_score = score_sky(avg_cloud)
+    darkness_score = score_darkness(night.dark_hours)
+    moon_score = score_moon(moon, max_kp)
+    comfort_score = score_comfort(temps, precip)
+    confidence = confidence_label(days_out, failures)
+
+    raw_score = (
+        aurora_score * 0.4
+        + sky_score * 0.35
+        + darkness_score * 0.1
+        + moon_score * 0.1
+        + comfort_score * 0.05
+    )
+    score = int(round(raw_score))
+    blockers = blockers_for(night, max_kp, avg_cloud, moon, days_out, failures)
+    recommendation = recommendation_for(score, blockers)
+    reasons = reasons_for(max_kp, avg_cloud, moon, night.dark_hours, confidence)
+
+    return NightAssessment(
+        night=night,
+        recommendation=recommendation,
+        score=score,
+        confidence=confidence,
+        aurora_score=aurora_score,
+        sky_score=sky_score,
+        darkness_score=darkness_score,
+        moon_score=moon_score,
+        comfort_score=comfort_score,
+        max_kp=max_kp,
+        avg_cloud_cover=avg_cloud,
+        min_cloud_cover=min_cloud,
+        moon_illumination=moon,
+        blockers=blockers,
+        reasons=reasons,
+    )
+
+
+def filter_weather_for_darkness(night: AuroraNight, weather: list[HourlyWeather]) -> list[HourlyWeather]:
+    if not night.dark_windows_utc:
+        return [entry for entry in weather if night.start_utc <= entry.time_utc < night.end_utc]
+    return [
+        entry
+        for entry in weather
+        if any(window.contains(entry.time_utc) for window in night.dark_windows_utc)
+    ]
+
+
+def score_aurora(max_kp: float | None) -> int:
+    if max_kp is None:
+        return 0
+    if max_kp >= 7:
+        return 100
+    if max_kp >= 6:
+        return 90
+    if max_kp >= 5:
+        return 72
+    if max_kp >= 4:
+        return 48
+    if max_kp >= 3:
+        return 28
+    return 10
+
+
+def score_sky(avg_cloud: float | None) -> int:
+    if avg_cloud is None:
+        return 0
+    if avg_cloud <= 15:
+        return 100
+    if avg_cloud <= 30:
+        return 85
+    if avg_cloud <= 50:
+        return 55
+    if avg_cloud <= 70:
+        return 25
+    return 0
+
+
+def score_darkness(dark_hours: float) -> int:
+    if dark_hours >= 6:
+        return 100
+    if dark_hours >= 4:
+        return 80
+    if dark_hours >= 2:
+        return 45
+    if dark_hours > 0:
+        return 20
+    return 0
+
+
+def score_moon(moon: float, max_kp: float | None) -> int:
+    if moon <= 20:
+        return 100
+    if moon <= 50:
+        return 70
+    if moon <= 80:
+        return 35 if (max_kp or 0) < 7 else 55
+    return 15 if (max_kp or 0) < 7 else 40
+
+
+def score_comfort(temps: list[float], precip: list[float]) -> int:
+    temp_score = 70
+    if temps:
+        avg_temp = sum(temps) / len(temps)
+        if avg_temp < -20:
+            temp_score = 25
+        elif avg_temp < 0:
+            temp_score = 50
+        elif avg_temp <= 35:
+            temp_score = 85
+        else:
+            temp_score = 75
+    precip_score = 70
+    if precip:
+        avg_precip = sum(precip) / len(precip)
+        if avg_precip <= 10:
+            precip_score = 100
+        elif avg_precip <= 35:
+            precip_score = 65
+        else:
+            precip_score = 25
+    return int(round((temp_score + precip_score) / 2))
+
+
+def blockers_for(
+    night: AuroraNight,
+    max_kp: float | None,
+    avg_cloud: float | None,
+    moon: float,
+    days_out: float,
+    source_failures: list[str],
+) -> list[str]:
+    blockers: list[str] = []
+    if source_failures:
+        blockers.append("Required source data is missing.")
+    if not night.has_astronomical_darkness:
+        blockers.append("No astronomical darkness in the chasing window.")
+    if max_kp is None:
+        blockers.append("No Kp forecast overlaps this night.")
+    elif max_kp < 5:
+        blockers.append("Kp signal is below the conservative Go threshold.")
+    if avg_cloud is None:
+        blockers.append("No cloud forecast overlaps the dark window.")
+    elif avg_cloud > 70:
+        blockers.append("Cloud cover is too high for a Go recommendation.")
+    if moon > 80 and (max_kp or 0) < 7:
+        blockers.append("Moonlight is very bright without an exceptional Kp signal.")
+    if days_out > 4:
+        blockers.append("Forecast is too far out for a Go recommendation.")
+    return blockers
+
+
+def recommendation_for(score: int, blockers: list[str]) -> str:
+    if score >= 80 and not blockers:
+        return "Go"
+    if score >= 55:
+        return "Watch"
+    return "Skip"
+
+
+def confidence_label(days_out: float, source_failures: list[str]) -> str:
+    if source_failures:
+        return "Low"
+    if days_out <= 2:
+        return "High"
+    if days_out <= 4:
+        return "Medium"
+    return "Low"
+
+
+def reasons_for(
+    max_kp: float | None,
+    avg_cloud: float | None,
+    moon: float,
+    dark_hours: float,
+    confidence: str,
+) -> list[str]:
+    return [
+        f"Max Kp: {max_kp:.1f}" if max_kp is not None else "Max Kp: unavailable",
+        f"Average cloud cover during darkness: {avg_cloud:.0f}%" if avg_cloud is not None else "Cloud cover: unavailable",
+        f"Moon illumination: {moon:.0f}%",
+        f"Astronomical darkness: {dark_hours:.1f} hours",
+        f"Forecast confidence: {confidence}",
+    ]
+

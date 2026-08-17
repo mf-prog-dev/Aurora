@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.error import URLError
@@ -18,23 +19,24 @@ DB_PATH = DATA_DIR / "aurora.sqlite3"
 
 def init_cache() -> None:
     DATA_DIR.mkdir(exist_ok=True)
-    with sqlite3.connect(DB_PATH) as db:
-        db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS cache (
-                key TEXT PRIMARY KEY,
-                fetched_at_utc TEXT NOT NULL,
-                payload TEXT NOT NULL
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        with db:
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cache (
+                    key TEXT PRIMARY KEY,
+                    fetched_at_utc TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
 
 
 def cached_json(key: str, fetcher, force_refresh: bool = False) -> tuple[object | None, SourceStatus]:
     init_cache()
     now = datetime.now(UTC)
     if not force_refresh:
-        with sqlite3.connect(DB_PATH) as db:
+        with closing(sqlite3.connect(DB_PATH)) as db:
             row = db.execute("SELECT fetched_at_utc, payload FROM cache WHERE key = ?", (key,)).fetchone()
             if row:
                 fetched_at = datetime.fromisoformat(row[0])
@@ -46,11 +48,12 @@ def cached_json(key: str, fetcher, force_refresh: bool = False) -> tuple[object 
     except (URLError, TimeoutError, OSError, ValueError) as exc:
         return None, SourceStatus(key, False, f"Fetch failed: {exc}", now)
 
-    with sqlite3.connect(DB_PATH) as db:
-        db.execute(
-            "REPLACE INTO cache (key, fetched_at_utc, payload) VALUES (?, ?, ?)",
-            (key, now.isoformat(), json.dumps(payload)),
-        )
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        with db:
+            db.execute(
+                "REPLACE INTO cache (key, fetched_at_utc, payload) VALUES (?, ?, ?)",
+                (key, now.isoformat(), json.dumps(payload)),
+            )
     message = "Fetched live after manual refresh." if force_refresh else "Fetched live."
     return payload, SourceStatus(key, True, message, now)
 

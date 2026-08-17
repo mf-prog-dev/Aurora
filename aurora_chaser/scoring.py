@@ -18,6 +18,12 @@ def assess_night(
     failures = source_failures or []
     weather_in_dark = filter_weather_for_darkness(night, weather)
     kp_in_night = [record.kp for record in kp_records if night.start_utc <= record.time_utc < night.end_utc]
+    kp_blocks = build_kp_block_details(night, kp_records)
+    weather_in_night = [
+        entry for entry in weather if night.start_utc <= entry.time_utc < night.end_utc
+    ]
+    kp_coverage = kp_coverage_for(night, kp_records, kp_blocks)
+    weather_coverage = weather_coverage_for(weather, weather_in_night)
     clouds = [entry.cloud_cover for entry in weather_in_dark if entry.cloud_cover is not None]
     temps = [entry.temperature_f for entry in weather_in_dark if entry.temperature_f is not None]
     precip = [
@@ -47,12 +53,11 @@ def assess_night(
         + comfort_score * 0.05
     )
     score = int(round(raw_score))
-    blockers = blockers_for(night, max_kp, avg_cloud, moon, days_out, failures)
+    blockers = blockers_for(night, max_kp, avg_cloud, moon, days_out, failures, kp_coverage, weather_coverage)
     recommendation = recommendation_for(score, blockers)
-    reasons = reasons_for(max_kp, avg_cloud, moon, night.dark_hours, confidence)
+    reasons = reasons_for(max_kp, avg_cloud, moon, night.dark_hours, confidence, kp_coverage, weather_coverage)
     seasonal_note = seasonal_note_for(night)
     hourly_details = build_hourly_details(night, weather, kp_records)
-    kp_blocks = build_kp_block_details(night, kp_records)
 
     return NightAssessment(
         night=night,
@@ -68,6 +73,8 @@ def assess_night(
         avg_cloud_cover=avg_cloud,
         min_cloud_cover=min_cloud,
         moon_illumination=moon,
+        kp_coverage=kp_coverage,
+        weather_coverage=weather_coverage,
         kp_blocks=kp_blocks,
         seasonal_note=seasonal_note,
         hourly_details=hourly_details,
@@ -150,6 +157,32 @@ def build_kp_block_details(night: AuroraNight, kp_records: list[KpRecord]) -> li
             )
         )
     return blocks
+
+
+def kp_coverage_for(
+    night: AuroraNight,
+    kp_records: list[KpRecord],
+    kp_blocks: list[KpBlockDetail],
+) -> str:
+    if kp_blocks:
+        return "covered"
+    if not kp_records:
+        return "missing"
+    latest_end = max(record.time_utc + timedelta(hours=3) for record in kp_records)
+    earliest_start = min(record.time_utc for record in kp_records)
+    if night.start_utc >= latest_end:
+        return "forecast does not extend this far"
+    if night.end_utc <= earliest_start:
+        return "before available forecast"
+    return "gap"
+
+
+def weather_coverage_for(weather: list[HourlyWeather], weather_in_night: list[HourlyWeather]) -> str:
+    if weather_in_night:
+        return "covered"
+    if not weather:
+        return "missing"
+    return "forecast does not cover this night"
 
 
 def score_aurora(max_kp: float | None) -> int:
@@ -235,6 +268,8 @@ def blockers_for(
     moon: float,
     days_out: float,
     source_failures: list[str],
+    kp_coverage: str,
+    weather_coverage: str,
 ) -> list[str]:
     blockers: list[str] = []
     if source_failures:
@@ -242,11 +277,11 @@ def blockers_for(
     if not night.has_astronomical_darkness:
         blockers.append("No astronomical darkness in the chasing window.")
     if max_kp is None:
-        blockers.append("No Kp forecast overlaps this night.")
+        blockers.append(f"Kp coverage: {kp_coverage}.")
     elif max_kp < 4:
         blockers.append("Kp signal is below the Fairbanks conservative Go threshold.")
     if avg_cloud is None:
-        blockers.append("No cloud forecast overlaps the dark window.")
+        blockers.append(f"Weather coverage: {weather_coverage}.")
     elif avg_cloud > 70:
         blockers.append("Cloud cover is too high for a Go recommendation.")
     if moon > 80 and (max_kp or 0) < 7:
@@ -291,10 +326,14 @@ def reasons_for(
     moon: float,
     dark_hours: float,
     confidence: str,
+    kp_coverage: str,
+    weather_coverage: str,
 ) -> list[str]:
     return [
         f"Max Kp: {max_kp:.1f}" if max_kp is not None else "Max Kp: unavailable",
+        f"Kp coverage: {kp_coverage}",
         f"Average cloud cover during darkness: {avg_cloud:.0f}%" if avg_cloud is not None else "Cloud cover: unavailable",
+        f"Weather coverage: {weather_coverage}",
         f"Moon illumination: {moon:.0f}%",
         f"Astronomical darkness: {dark_hours:.1f} hours",
         f"Forecast confidence: {confidence}",

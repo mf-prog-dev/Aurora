@@ -144,6 +144,14 @@ def render_dashboard(
       border-radius: 6px;
       color: #51430f;
     }}
+    .info {{
+      margin: 14px 0;
+      padding: 12px;
+      background: #eaf5ef;
+      border: 1px solid #b9d7c7;
+      border-radius: 6px;
+      color: #214638;
+    }}
     .hourly {{
       margin-top: 12px;
       width: 100%;
@@ -196,6 +204,7 @@ def render_dashboard(
   </header>
   <main>
     <p>Generated {generated}. {refresh_note}</p>
+    <div class="info">Fairbanks sits under the auroral oval, so Kp 4 can be meaningful here. The app still requires clear skies, dark hours, near-term confidence, and manageable moonlight before it will say Go.</div>
     <table aria-label="Fairbanks aurora outlook">
       <thead>
         <tr>
@@ -257,7 +266,7 @@ def render_row(assessment: NightAssessment) -> str:
 
 def render_kp_blocks(assessment: NightAssessment) -> str:
     if not assessment.kp_blocks:
-        return '<p class="note">No NOAA Kp forecast blocks overlap this Fairbanks night.</p>'
+        return f'<p class="note">No NOAA Kp forecast blocks overlap this Fairbanks night. Coverage: {escape(assessment.kp_coverage)}.</p>'
     rows = "\n".join(
         f"""<tr>
   <td>{escape(block.utc_label)}</td>

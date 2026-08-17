@@ -32,6 +32,7 @@ python3 -m unittest discover -s tests
 - Conservative `Go / Watch / Skip` recommendations
 - No secrets in source code
 - Kp 4 is treated as meaningful for Fairbanks, but other conservative gates can still block `Go`
+- Missing Kp rows are shown as forecast coverage gaps when the source is healthy but does not extend far enough
 
 ## Data Sources
 

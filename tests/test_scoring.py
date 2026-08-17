@@ -92,6 +92,15 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(len(result.kp_blocks), 1)
         self.assertIn("UTC", result.kp_blocks[0].utc_label)
 
+    def test_kp_coverage_distinguishes_forecast_range_from_source_failure(self) -> None:
+        night = build_aurora_night(date(2026, 1, 15))
+        weather = [HourlyWeather(night.start_utc + timedelta(hours=1), 5, 0, 5)]
+        kp = [KpRecord(night.start_utc - timedelta(days=2), 4, "test")]
+        result = assess_night(night, weather, kp, now_utc=night.start_utc)
+        self.assertEqual(result.kp_coverage, "forecast does not extend this far")
+        self.assertTrue(any("Kp coverage" in blocker for blocker in result.blockers))
+        self.assertFalse(any("Required source data" in blocker for blocker in result.blockers))
+
 
 if __name__ == "__main__":
     unittest.main()

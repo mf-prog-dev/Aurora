@@ -6,8 +6,8 @@
 
 ## Next
 
-- [ ] Add a clearer explanation of how Kp 4 differs for Fairbanks versus lower latitudes.
-- [ ] Track source coverage separately from source failure.
+- [ ] Add a threshold tuning view that shows component scores side by side.
+- [ ] Add a compact "why not Go" summary in the main row.
 
 ## Done
 
@@ -25,6 +25,8 @@
 - [x] Add explicit UTC Kp source block visibility in the detail view.
 - [x] Add manual refresh that bypasses the local cache.
 - [x] Adjust Fairbanks scoring so Kp 4 is meaningful.
+- [x] Add a clearer explanation of how Kp 4 differs for Fairbanks versus lower latitudes.
+- [x] Track source coverage separately from source failure.
 
 ## Principles
 

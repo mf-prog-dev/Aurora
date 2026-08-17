@@ -95,6 +95,8 @@ class NightAssessment:
     avg_cloud_cover: float | None
     min_cloud_cover: float | None
     moon_illumination: float
+    kp_coverage: str
+    weather_coverage: str
     kp_blocks: list[KpBlockDetail] = field(default_factory=list)
     seasonal_note: str | None = None
     hourly_details: list[HourlyDetail] = field(default_factory=list)

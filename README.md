@@ -16,6 +16,8 @@ Open:
 http://127.0.0.1:8765
 ```
 
+Use **Reload** for the normal cached view. Use **Fetch Fresh Data** when you want to bypass the 60-minute local cache and ask the sources for current data.
+
 ## Test
 
 ```bash
@@ -29,6 +31,7 @@ python3 -m unittest discover -s tests
 - No flight or lodging logic
 - Conservative `Go / Watch / Skip` recommendations
 - No secrets in source code
+- Kp 4 is treated as meaningful for Fairbanks, but other conservative gates can still block `Go`
 
 ## Data Sources
 

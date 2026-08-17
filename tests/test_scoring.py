@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from aurora_chaser.config import UTC
 from aurora_chaser.models import HourlyWeather, KpRecord
-from aurora_chaser.scoring import assess_night, kp_for_hour
+from aurora_chaser.scoring import assess_night, kp_for_hour, score_aurora
 from aurora_chaser.time_windows import build_aurora_night
 
 
@@ -31,6 +31,17 @@ class ScoringTests(unittest.TestCase):
         result = assess_night(night, weather, kp, now_utc=night.start_utc - timedelta(days=1))
         if result.moon_illumination <= 80:
             self.assertEqual(result.recommendation, "Go")
+
+    def test_kp_four_is_meaningful_at_fairbanks(self) -> None:
+        night = build_aurora_night(date(2026, 1, 15))
+        weather = [
+            HourlyWeather(window.start_utc + timedelta(hours=1), 5, 0, 5)
+            for window in night.dark_windows_utc
+        ]
+        kp = [KpRecord(night.start_utc + timedelta(hours=3), 4, "test")]
+        result = assess_night(night, weather, kp, now_utc=night.start_utc - timedelta(days=1))
+        self.assertGreaterEqual(score_aurora(4), 60)
+        self.assertFalse(any("Kp signal" in blocker for blocker in result.blockers))
 
     def test_far_out_forecast_blocks_go(self) -> None:
         night = build_aurora_night(date(2026, 1, 15))
@@ -68,6 +79,18 @@ class ScoringTests(unittest.TestCase):
         records = [KpRecord(moment, 5, "test")]
         self.assertEqual(kp_for_hour(moment + timedelta(hours=2), records), 5)
         self.assertIsNone(kp_for_hour(moment + timedelta(hours=4), records))
+
+    def test_assessment_lists_overlapping_kp_blocks(self) -> None:
+        night = build_aurora_night(date(2026, 1, 15))
+        weather = [HourlyWeather(night.start_utc + timedelta(hours=1), 5, 0, 5)]
+        kp = [
+            KpRecord(night.start_utc - timedelta(hours=3), 3, "test"),
+            KpRecord(night.start_utc, 4, "test"),
+            KpRecord(night.end_utc, 5, "test"),
+        ]
+        result = assess_night(night, weather, kp, now_utc=night.start_utc)
+        self.assertEqual(len(result.kp_blocks), 1)
+        self.assertIn("UTC", result.kp_blocks[0].utc_label)
 
 
 if __name__ == "__main__":

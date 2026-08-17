@@ -6,9 +6,8 @@
 
 ## Next
 
-- [ ] Add richer night-detail timeline rows.
-- [ ] Consider a manual refresh/force-cache-clear control.
-- [ ] Add explicit UTC Kp source block visibility in the detail view.
+- [ ] Add a clearer explanation of how Kp 4 differs for Fairbanks versus lower latitudes.
+- [ ] Track source coverage separately from source failure.
 
 ## Done
 
@@ -23,6 +22,9 @@
 - [x] Verify the local dashboard and source fetch behavior.
 - [x] Improve seasonal messaging when Fairbanks has no astronomical darkness.
 - [x] Add richer night-detail timeline rows.
+- [x] Add explicit UTC Kp source block visibility in the detail view.
+- [x] Add manual refresh that bypasses the local cache.
+- [x] Adjust Fairbanks scoring so Kp 4 is meaningful.
 
 ## Principles
 

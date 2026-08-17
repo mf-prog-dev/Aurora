@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from .config import FAIRBANKS_TZ, UTC
-from .models import AuroraNight, HourlyDetail, HourlyWeather, KpRecord, NightAssessment
+from .models import AuroraNight, HourlyDetail, HourlyWeather, KpBlockDetail, KpRecord, NightAssessment
 from .time_windows import moon_illumination_percent
 
 
@@ -52,6 +52,7 @@ def assess_night(
     reasons = reasons_for(max_kp, avg_cloud, moon, night.dark_hours, confidence)
     seasonal_note = seasonal_note_for(night)
     hourly_details = build_hourly_details(night, weather, kp_records)
+    kp_blocks = build_kp_block_details(night, kp_records)
 
     return NightAssessment(
         night=night,
@@ -67,6 +68,7 @@ def assess_night(
         avg_cloud_cover=avg_cloud,
         min_cloud_cover=min_cloud,
         moon_illumination=moon,
+        kp_blocks=kp_blocks,
         seasonal_note=seasonal_note,
         hourly_details=hourly_details,
         blockers=blockers,
@@ -128,6 +130,28 @@ def kp_for_hour(moment_utc: datetime, kp_records: list[KpRecord]) -> float | Non
     return None
 
 
+def build_kp_block_details(night: AuroraNight, kp_records: list[KpRecord]) -> list[KpBlockDetail]:
+    blocks: list[KpBlockDetail] = []
+    for record in kp_records:
+        start_utc = record.time_utc
+        end_utc = record.time_utc + timedelta(hours=3)
+        if end_utc <= night.start_utc or start_utc >= night.end_utc:
+            continue
+        start_local = start_utc.astimezone(FAIRBANKS_TZ)
+        end_local = end_utc.astimezone(FAIRBANKS_TZ)
+        blocks.append(
+            KpBlockDetail(
+                start_utc=start_utc,
+                end_utc=end_utc,
+                utc_label=f"{start_utc.strftime('%b %-d %H:%M')} to {end_utc.strftime('%H:%M')} UTC",
+                fairbanks_label=f"{start_local.strftime('%b %-d %-I %p')} to {end_local.strftime('%-I %p')} AK",
+                kp=record.kp,
+                source=record.source,
+            )
+        )
+    return blocks
+
+
 def score_aurora(max_kp: float | None) -> int:
     if max_kp is None:
         return 0
@@ -138,7 +162,7 @@ def score_aurora(max_kp: float | None) -> int:
     if max_kp >= 5:
         return 72
     if max_kp >= 4:
-        return 48
+        return 62
     if max_kp >= 3:
         return 28
     return 10
@@ -219,8 +243,8 @@ def blockers_for(
         blockers.append("No astronomical darkness in the chasing window.")
     if max_kp is None:
         blockers.append("No Kp forecast overlaps this night.")
-    elif max_kp < 5:
-        blockers.append("Kp signal is below the conservative Go threshold.")
+    elif max_kp < 4:
+        blockers.append("Kp signal is below the Fairbanks conservative Go threshold.")
     if avg_cloud is None:
         blockers.append("No cloud forecast overlaps the dark window.")
     elif avg_cloud > 70:

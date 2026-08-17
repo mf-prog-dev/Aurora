@@ -9,9 +9,9 @@ from .scoring import assess_night
 from .time_windows import build_aurora_nights
 
 
-def build_assessments() -> tuple[list[NightAssessment], list[SourceStatus]]:
-    weather, weather_status = get_weather()
-    kp_records, kp_status = get_kp_records()
+def build_assessments(force_refresh: bool = False) -> tuple[list[NightAssessment], list[SourceStatus]]:
+    weather, weather_status = get_weather(force_refresh=force_refresh)
+    kp_records, kp_status = get_kp_records(force_refresh=force_refresh)
     statuses = [weather_status, kp_status]
     failures = [status.name for status in statuses if not status.ok]
     nights = build_aurora_nights()
@@ -22,10 +22,15 @@ def build_assessments() -> tuple[list[NightAssessment], list[SourceStatus]]:
     return assessments, statuses
 
 
-def render_dashboard(assessments: list[NightAssessment], statuses: list[SourceStatus]) -> str:
+def render_dashboard(
+    assessments: list[NightAssessment],
+    statuses: list[SourceStatus],
+    force_refresh: bool = False,
+) -> str:
     rows = "\n".join(render_row(assessment) for assessment in assessments)
     status_items = "\n".join(render_status(status) for status in statuses)
     generated = datetime.now(FAIRBANKS_TZ).strftime("%Y-%m-%d %H:%M %Z")
+    refresh_note = "Manual refresh fetched fresh source data." if force_refresh else "Normal reload uses the local cache for about 60 minutes."
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -79,6 +84,12 @@ def render_dashboard(assessments: list[NightAssessment], statuses: list[SourceSt
       border-radius: 6px;
       text-decoration: none;
       white-space: nowrap;
+    }}
+    .actions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }}
     table {{
       width: 100%;
@@ -148,6 +159,16 @@ def render_dashboard(assessments: list[NightAssessment], statuses: list[SourceSt
       font-weight: 700;
       color: var(--go);
     }}
+    .kp-blocks {{
+      margin-top: 12px;
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fbfcfa;
+    }}
+    .kp-blocks th, .kp-blocks td {{
+      padding: 6px 7px;
+      font-size: 12px;
+    }}
     .sources {{
       margin-top: 20px;
       display: grid;
@@ -168,10 +189,13 @@ def render_dashboard(assessments: list[NightAssessment], statuses: list[SourceSt
       <h1>Fairbanks Aurora Chaser</h1>
       <p>Conservative local outlook. Times are Fairbanks local; scoring uses UTC internally.</p>
     </div>
-    <a class="refresh" href="/">Refresh</a>
+    <div class="actions">
+      <a class="refresh" href="/">Reload</a>
+      <a class="refresh" href="/?refresh=1">Fetch Fresh Data</a>
+    </div>
   </header>
   <main>
-    <p>Generated {generated}</p>
+    <p>Generated {generated}. {refresh_note}</p>
     <table aria-label="Fairbanks aurora outlook">
       <thead>
         <tr>
@@ -206,6 +230,7 @@ def render_row(assessment: NightAssessment) -> str:
     blockers = "".join(f"<li>{escape(blocker)}</li>" for blocker in assessment.blockers)
     blocker_section = f"<strong>Go blockers</strong><ul>{blockers}</ul>" if blockers else "<strong>No Go blockers</strong>"
     seasonal_note = f'<div class="note">{escape(assessment.seasonal_note)}</div>' if assessment.seasonal_note else ""
+    kp_blocks = render_kp_blocks(assessment)
     hourly = render_hourly_details(assessment)
     return f"""
 <tr>
@@ -223,10 +248,36 @@ def render_row(assessment: NightAssessment) -> str:
       {seasonal_note}
       <ul>{reasons}</ul>
       {blocker_section}
+      {kp_blocks}
       {hourly}
     </details>
   </td>
 </tr>"""
+
+
+def render_kp_blocks(assessment: NightAssessment) -> str:
+    if not assessment.kp_blocks:
+        return '<p class="note">No NOAA Kp forecast blocks overlap this Fairbanks night.</p>'
+    rows = "\n".join(
+        f"""<tr>
+  <td>{escape(block.utc_label)}</td>
+  <td>{escape(block.fairbanks_label)}</td>
+  <td>{block.kp:.1f}</td>
+  <td>{escape(block.source)}</td>
+</tr>"""
+        for block in assessment.kp_blocks
+    )
+    return f"""<table class="kp-blocks" aria-label="Kp blocks for {escape(assessment.night.label)}">
+  <thead>
+    <tr>
+      <th>UTC Kp Block</th>
+      <th>Fairbanks Time</th>
+      <th>Kp</th>
+      <th>Source</th>
+    </tr>
+  </thead>
+  <tbody>{rows}</tbody>
+</table>"""
 
 
 def render_hourly_details(assessment: NightAssessment) -> str:

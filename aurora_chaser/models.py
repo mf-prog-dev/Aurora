@@ -52,6 +52,16 @@ class KpRecord:
 
 
 @dataclass(frozen=True)
+class KpBlockDetail:
+    start_utc: datetime
+    end_utc: datetime
+    utc_label: str
+    fairbanks_label: str
+    kp: float
+    source: str
+
+
+@dataclass(frozen=True)
 class HourlyDetail:
     time_utc: datetime
     time_local_label: str
@@ -85,6 +95,7 @@ class NightAssessment:
     avg_cloud_cover: float | None
     min_cloud_cover: float | None
     moon_illumination: float
+    kp_blocks: list[KpBlockDetail] = field(default_factory=list)
     seasonal_note: str | None = None
     hourly_details: list[HourlyDetail] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)

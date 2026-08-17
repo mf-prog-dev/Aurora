@@ -30,15 +30,16 @@ def init_cache() -> None:
         )
 
 
-def cached_json(key: str, fetcher) -> tuple[object | None, SourceStatus]:
+def cached_json(key: str, fetcher, force_refresh: bool = False) -> tuple[object | None, SourceStatus]:
     init_cache()
     now = datetime.now(UTC)
-    with sqlite3.connect(DB_PATH) as db:
-        row = db.execute("SELECT fetched_at_utc, payload FROM cache WHERE key = ?", (key,)).fetchone()
-        if row:
-            fetched_at = datetime.fromisoformat(row[0])
-            if now - fetched_at < timedelta(minutes=CONFIG.cache_ttl_minutes):
-                return json.loads(row[1]), SourceStatus(key, True, "Loaded from local cache.", fetched_at)
+    if not force_refresh:
+        with sqlite3.connect(DB_PATH) as db:
+            row = db.execute("SELECT fetched_at_utc, payload FROM cache WHERE key = ?", (key,)).fetchone()
+            if row:
+                fetched_at = datetime.fromisoformat(row[0])
+                if now - fetched_at < timedelta(minutes=CONFIG.cache_ttl_minutes):
+                    return json.loads(row[1]), SourceStatus(key, True, "Loaded from local cache.", fetched_at)
 
     try:
         payload = fetcher()
@@ -50,7 +51,8 @@ def cached_json(key: str, fetcher) -> tuple[object | None, SourceStatus]:
             "REPLACE INTO cache (key, fetched_at_utc, payload) VALUES (?, ?, ?)",
             (key, now.isoformat(), json.dumps(payload)),
         )
-    return payload, SourceStatus(key, True, "Fetched live.", now)
+    message = "Fetched live after manual refresh." if force_refresh else "Fetched live."
+    return payload, SourceStatus(key, True, message, now)
 
 
 def fetch_json(url: str) -> object:
@@ -59,7 +61,7 @@ def fetch_json(url: str) -> object:
         return json.loads(response.read().decode("utf-8"))
 
 
-def get_weather() -> tuple[list[HourlyWeather], SourceStatus]:
+def get_weather(force_refresh: bool = False) -> tuple[list[HourlyWeather], SourceStatus]:
     params = urlencode(
         {
             "latitude": CONFIG.latitude,
@@ -71,7 +73,7 @@ def get_weather() -> tuple[list[HourlyWeather], SourceStatus]:
         }
     )
     url = f"https://api.open-meteo.com/v1/forecast?{params}"
-    payload, status = cached_json("weather", lambda: fetch_json(url))
+    payload, status = cached_json("weather", lambda: fetch_json(url), force_refresh)
     if not isinstance(payload, dict):
         return [], status
 
@@ -89,9 +91,9 @@ def get_weather() -> tuple[list[HourlyWeather], SourceStatus]:
     return records, status
 
 
-def get_kp_records() -> tuple[list[KpRecord], SourceStatus]:
+def get_kp_records(force_refresh: bool = False) -> tuple[list[KpRecord], SourceStatus]:
     url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
-    payload, status = cached_json("kp_forecast", lambda: fetch_json(url))
+    payload, status = cached_json("kp_forecast", lambda: fetch_json(url), force_refresh)
     records: list[KpRecord] = []
     if not isinstance(payload, list) or not payload:
         return records, status
